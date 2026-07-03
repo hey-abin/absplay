@@ -200,15 +200,6 @@ export default function Home() {
           if (data.status === 'completed') {
             triggerFileDownload(taskId, data.filename);
             addToHistory(data);
-            
-            // Remove task from active display after 6 seconds
-            setTimeout(() => {
-              setActiveTasks(prev => {
-                const copy = { ...prev };
-                delete copy[taskId];
-                return copy;
-              });
-            }, 6000);
           }
         }
       } catch (err) {
@@ -247,21 +238,28 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to start download");
       
-      const taskId = data.task_id;
-      setActiveTasks(prev => ({
-        ...prev,
-        [taskId]: {
-          task_id: taskId,
-          title: item.title,
-          status: 'pending',
-          progress: 0.0,
-          speed: '0 KB/s',
-          eta: '00:00',
-          type: downloadType
-        }
-      }));
+      const taskIds = data.task_ids;
+      setActiveTasks(prev => {
+        const newTasks = { ...prev };
+        taskIds.forEach((taskId, index) => {
+          let partTitle = item.title;
+          if (taskIds.length > 1) {
+            partTitle = `${item.title} (Part ${index + 1})`;
+          }
+          newTasks[taskId] = {
+            task_id: taskId,
+            title: partTitle,
+            status: 'pending',
+            progress: 0.0,
+            speed: '0 KB/s',
+            eta: '00:00',
+            type: downloadType
+          };
+          startPolling(taskId);
+        });
+        return newTasks;
+      });
       showToast(`Download started: ${item.title}`);
-      startPolling(taskId);
     } catch (err) {
       showToast(err.message || "Failed to start download", "error");
     }
@@ -302,24 +300,31 @@ export default function Home() {
         throw new Error(data.detail || "Failed to start download");
       }
       
-      const taskId = data.task_id;
+      const taskIds = data.task_ids;
       
       // Initialize active task state
-      setActiveTasks(prev => ({
-        ...prev,
-        [taskId]: {
-          task_id: taskId,
-          title: mediaInfo.title,
-          status: 'pending',
-          progress: 0.0,
-          speed: '0 KB/s',
-          eta: '00:00',
-          type: downloadType
-        }
-      }));
+      setActiveTasks(prev => {
+        const newTasks = { ...prev };
+        taskIds.forEach((taskId, index) => {
+          let partTitle = mediaInfo.title;
+          if (taskIds.length > 1) {
+            partTitle = `${mediaInfo.title} (Part ${index + 1})`;
+          }
+          newTasks[taskId] = {
+            task_id: taskId,
+            title: partTitle,
+            status: 'pending',
+            progress: 0.0,
+            speed: '0 KB/s',
+            eta: '00:00',
+            type: downloadType
+          };
+          startPolling(taskId);
+        });
+        return newTasks;
+      });
       
       showToast("Download started in background");
-      startPolling(taskId);
     } catch (err) {
       showToast(err.message || "Failed to start download", "error");
     }
@@ -341,27 +346,20 @@ export default function Home() {
         delete pollingIntervals.current[taskId];
       }
       
-      setActiveTasks(prev => ({
-        ...prev,
-        [taskId]: {
-          ...prev[taskId],
-          status: 'cancelled',
-          progress: 0.0,
-          error: 'Download cancelled by user'
-        }
-      }));
-      
-      showToast("Download cancelled", "info");
-      
-      setTimeout(() => {
-        setActiveTasks(prev => {
-          const copy = { ...prev };
-          delete copy[taskId];
-          return copy;
-        });
-      }, 4000);
+      showToast("Cancellation requested");
     } catch (err) {
-      showToast(err.message, "error");
+      showToast(err.message || "Failed to cancel task", "error");
+    }
+  };
+
+  const handleRetry = async (taskId) => {
+    try {
+      const res = await fetch(`${API_BASE}/retry/${taskId}`, { method: 'POST' });
+      if (!res.ok) throw new Error("Retry failed");
+      showToast("Retrying download", "info");
+      startPolling(taskId);
+    } catch (err) {
+      showToast("Failed to retry", "error");
     }
   };
 
@@ -880,34 +878,73 @@ export default function Home() {
               <div className="flex flex-col gap-4">
                 {Object.values(activeTasks).map(task => (
                   <div key={task.task_id} className={`p-4 rounded-xl border flex flex-col gap-2.5 ${
-                    task.status === 'failed' 
-                      ? 'bg-rose-500/5 border-rose-500/10' 
-                      : task.status === 'cancelled' 
-                        ? 'bg-amber-500/5 border-amber-500/10' 
+                    ['failed', 'cancelled'].includes(task.status)
+                      ? 'bg-rose-500/10 border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.1)]' 
+                      : task.status === 'completed'
+                        ? 'bg-emerald-500/10 border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
                         : isDark ? 'bg-gray-900/60 border-gray-800' : 'bg-slate-100 border-slate-200'
                   }`}>
                     
                     {/* Header */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-xs font-bold truncate pr-2">{task.title || 'Processing file...'}</h4>
+                        <h4 className={`text-xs font-bold truncate pr-2 ${task.status === 'completed' ? 'text-emerald-500' : ['failed', 'cancelled'].includes(task.status) ? 'text-rose-500' : ''}`}>
+                          {task.title || 'Processing file...'}
+                        </h4>
                         <span className="text-[9px] text-gray-400 font-mono mt-0.5 block truncate">ID: {task.task_id}</span>
                       </div>
                       
-                      {/* Cancel action */}
-                      {['pending', 'downloading', 'converting'].includes(task.status) && (
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        {['pending', 'downloading', 'converting'].includes(task.status) && (
+                          <button
+                            onClick={() => handleCancel(task.task_id)}
+                            className={`p-1.5 rounded-lg border hover:scale-105 active:scale-95 transition-all ${
+                              isDark 
+                                ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10' 
+                                : 'bg-white border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+                            }`}
+                            title="Cancel Download"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        )}
+                        {task.status === 'completed' && (
+                          <button
+                            onClick={() => triggerFileDownload(task.task_id, task.filename)}
+                            className="p-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 hover:scale-105 active:scale-95 transition-all"
+                            title="Download File"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                          </button>
+                        )}
+                        {['failed', 'cancelled'].includes(task.status) && (
+                          <button
+                            onClick={() => handleRetry(task.task_id)}
+                            className="p-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 hover:scale-105 active:scale-95 transition-all"
+                            title="Retry Download"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleCancel(task.task_id)}
+                          onClick={() => {
+                            setActiveTasks(prev => {
+                              const copy = { ...prev };
+                              delete copy[task.task_id];
+                              return copy;
+                            });
+                          }}
                           className={`p-1.5 rounded-lg border hover:scale-105 active:scale-95 transition-all ${
                             isDark 
-                              ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10' 
-                              : 'bg-white border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+                              ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700' 
+                              : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                           }`}
-                          title="Cancel Download"
+                          title="Dismiss Task"
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     {/* Progress Bar */}
@@ -915,10 +952,10 @@ export default function Home() {
                       <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
                         <div
                           className={`h-full transition-all duration-300 rounded-full ${
-                            task.status === 'failed' 
+                            ['failed', 'cancelled'].includes(task.status)
                               ? 'bg-rose-500' 
-                              : task.status === 'cancelled' 
-                                ? 'bg-amber-500' 
+                              : task.status === 'completed'
+                                ? 'bg-emerald-500'
                                 : task.status === 'converting' 
                                   ? 'bg-orange-500 animate-pulse'
                                   : 'gradient-bg'
@@ -927,7 +964,9 @@ export default function Home() {
                         ></div>
                       </div>
                       <div className="flex items-center justify-between text-[10px] font-mono text-gray-400 mt-0.5">
-                        <span className="capitalize font-semibold">{task.status}</span>
+                        <span className={`capitalize font-semibold ${task.status === 'completed' ? 'text-emerald-500' : ['failed', 'cancelled'].includes(task.status) ? 'text-rose-500' : ''}`}>
+                          {task.status}
+                        </span>
                         <span>{Math.round(task.progress || 0)}%</span>
                       </div>
                     </div>

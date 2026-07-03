@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
 from typing import Optional, List, Any
 
@@ -32,7 +33,7 @@ class AnalyzeResponse(BaseModel):
     supports_audio: bool = Field(alias="supportsAudio", default=True)
 
 class DownloadResponse(BaseModel):
-    task_id: str
+    task_ids: List[str]
 
 class ProgressResponse(BaseModel):
     task_id: str

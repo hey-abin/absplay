@@ -7,10 +7,10 @@ class TaskStore:
         self._tasks: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
 
-    def create_task(self, url: str, type_: str) -> str:
+    def create_task(self, url: str, type_: str, **kwargs) -> str:
         task_id = str(uuid.uuid4())
         with self._lock:
-            self._tasks[task_id] = {
+            task = {
                 "task_id": task_id,
                 "url": url,
                 "type": type_,
@@ -24,6 +24,8 @@ class TaskStore:
                 "download_path": None,
                 "cancel_requested": False
             }
+            task.update(kwargs)
+            self._tasks[task_id] = task
         return task_id
 
     def update_task(self, task_id: str, **kwargs) -> None:

@@ -155,14 +155,21 @@ def _get_audio_opts(quality: str) -> dict:
         }],
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=ios,android']}
+        'sleep_requests': 2.0,
+        'sleep_interval': 3,
+        'max_sleep_interval': 6,
+        'extractor_args': {'youtube': ['player_client=android,web']}
     }
 
 def _get_video_opts(quality: str) -> dict:
     ydl_opts = {
+        'format': 'best',
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=ios,android']}
+        'sleep_requests': 2.0,
+        'sleep_interval': 3,
+        'max_sleep_interval': 6,
+        'extractor_args': {'youtube': ['player_client=android,web']}
     }
     if quality == "1080p":
         ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
@@ -214,40 +221,32 @@ def _download_playlist(task_id: str, title: str, meta: dict, ydl_opts: dict, sel
     task_temp_dir.mkdir(parents=True, exist_ok=True)
     
     import time
-    
-    batch_size = 20
-    for batch_start in range(0, total_count, batch_size):
-        batch_indices = download_indices[batch_start:batch_start + batch_size]
+    for idx, entry_idx in enumerate(download_indices):
+        task = task_store.get_task(task_id)
+        if task and task.get("cancel_requested"):
+            raise DownloadCancelledException("Download cancelled by user")
+            
+        entry = entries[entry_idx]
+        if not entry:
+            continue
+            
+        entry_url = entry.get("url") or entry.get("webpage_url")
+        if not entry_url and entry.get("id"):
+            entry_url = f"https://www.youtube.com/watch?v={entry['id']}"
+            
+        if not entry_url:
+            continue
+            
+        entry_opts = dict(ydl_opts)
+        entry_opts['outtmpl'] = str(task_temp_dir / "%(title)s.%(ext)s")
+        entry_opts['progress_hooks'] = [make_progress_hook(task_id, idx, total_count)]
         
-        for idx_in_batch, entry_idx in enumerate(batch_indices):
-            idx = batch_start + idx_in_batch
+        with yt_dlp.YoutubeDL(entry_opts) as ydl:
+            ydl.download([entry_url])
             
-            task = task_store.get_task(task_id)
-            if task and task.get("cancel_requested"):
-                raise DownloadCancelledException("Download cancelled by user")
-                
-            entry = entries[entry_idx]
-            if not entry:
-                continue
-                
-            entry_url = entry.get("url") or entry.get("webpage_url")
-            if not entry_url and entry.get("id"):
-                entry_url = f"https://www.youtube.com/watch?v={entry['id']}"
-                
-            if not entry_url:
-                continue
-                
-            entry_opts = dict(ydl_opts)
-            entry_opts['outtmpl'] = str(task_temp_dir / "%(title)s.%(ext)s")
-            entry_opts['progress_hooks'] = [make_progress_hook(task_id, idx, total_count)]
-            
-            with yt_dlp.YoutubeDL(entry_opts) as ydl:
-                ydl.download([entry_url])
-                
-        # Pause between batches if there are more items to process
-        if batch_start + batch_size < total_count:
-            task_store.update_task(task_id, status="downloading", speed="Cooling down...", eta="Wait 10s")
-            time.sleep(10)
+        # Add a short delay between every single video to prevent HTTP 403 Forbidden
+        if idx < total_count - 1:
+            time.sleep(5)
     
     task = task_store.get_task(task_id)
     if task and task.get("cancel_requested"):
@@ -261,13 +260,15 @@ def _download_playlist(task_id: str, title: str, meta: dict, ydl_opts: dict, sel
     
     shutil.rmtree(task_temp_dir, ignore_errors=True)
     
+    zip_final_name = title if title.endswith(".zip") else f"{title}.zip"
+        
     task_store.update_task(
         task_id,
         status="completed",
         progress=100.0,
         speed="0 KB/s",
         eta="00:00",
-        filename="AbsPlay-package.zip",
+        filename=zip_final_name,
         download_path=str(zip_path)
     )
 
@@ -315,6 +316,15 @@ def run_download_task(task_id: str, url: str, type_: str, quality: str, selected
                 url_info["urlType"] = "youtube_playlist"
             elif url_info["urlType"] == "youtube_music_track":
                 url_info["urlType"] = "youtube_music_playlist"
+                
+            task_data = task_store.get_task(task_id)
+            part_number = task_data.get("part_number", 0) if task_data else 0
+            
+            clean_title = title.replace("/", "-").replace("\\", "-")
+            if part_number > 0:
+                title = f"AbsPlay-{clean_title}-{part_number}.zip"
+            else:
+                title = f"AbsPlay-{clean_title}.zip"
 
         task_store.update_task(task_id, title=title)
         
@@ -363,3 +373,21 @@ def cleanup_task_files(task_id: str):
             f.unlink()
         except FileNotFoundError:
             pass
+
+def run_sequential_downloads(tasks: List[dict]):
+    """
+    Run multiple download tasks sequentially to avoid rate-limiting.
+    tasks: [{"task_id": "...", "url": "...", "type_": "...", "quality": "...", "selected_items": [...]}]
+    """
+    import time
+    for i, t in enumerate(tasks):
+        run_download_task(
+            task_id=t["task_id"],
+            url=t["url"],
+            type_=t["type_"],
+            quality=t["quality"],
+            selected_items=t["selected_items"]
+        )
+        # Sleep between tasks (except after the last one) to avoid HTTP 403 Forbidden
+        if i < len(tasks) - 1:
+            time.sleep(5)
