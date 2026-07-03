@@ -17,7 +17,7 @@ def search_youtube(query: str) -> List[Dict[str, Any]]:
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=default,ios,android']}
+        'extractor_args': {'youtube': ['player_client=ios,android']}
     }
     
     # ytsearch10: retrieves up to 10 results

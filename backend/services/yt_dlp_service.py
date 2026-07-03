@@ -61,7 +61,7 @@ def analyze_url(url: str) -> Dict[str, Any]:
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=default,ios,android']}
+        'extractor_args': {'youtube': ['player_client=ios,android']}
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -155,14 +155,14 @@ def _get_audio_opts(quality: str) -> dict:
         }],
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=default,ios,android']}
+        'extractor_args': {'youtube': ['player_client=ios,android']}
     }
 
 def _get_video_opts(quality: str) -> dict:
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=default,ios,android']}
+        'extractor_args': {'youtube': ['player_client=ios,android']}
     }
     if quality == "1080p":
         ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
@@ -213,28 +213,41 @@ def _download_playlist(task_id: str, title: str, meta: dict, ydl_opts: dict, sel
     task_temp_dir = TEMP_DIR / task_id
     task_temp_dir.mkdir(parents=True, exist_ok=True)
     
-    for idx, entry_idx in enumerate(download_indices):
-        task = task_store.get_task(task_id)
-        if task and task.get("cancel_requested"):
-            raise DownloadCancelledException("Download cancelled by user")
-            
-        entry = entries[entry_idx]
-        if not entry:
-            continue
-            
-        entry_url = entry.get("url") or entry.get("webpage_url")
-        if not entry_url and entry.get("id"):
-            entry_url = f"https://www.youtube.com/watch?v={entry['id']}"
-            
-        if not entry_url:
-            continue
-            
-        entry_opts = dict(ydl_opts)
-        entry_opts['outtmpl'] = str(task_temp_dir / "%(title)s.%(ext)s")
-        entry_opts['progress_hooks'] = [make_progress_hook(task_id, idx, total_count)]
+    import time
+    
+    batch_size = 20
+    for batch_start in range(0, total_count, batch_size):
+        batch_indices = download_indices[batch_start:batch_start + batch_size]
         
-        with yt_dlp.YoutubeDL(entry_opts) as ydl:
-            ydl.download([entry_url])
+        for idx_in_batch, entry_idx in enumerate(batch_indices):
+            idx = batch_start + idx_in_batch
+            
+            task = task_store.get_task(task_id)
+            if task and task.get("cancel_requested"):
+                raise DownloadCancelledException("Download cancelled by user")
+                
+            entry = entries[entry_idx]
+            if not entry:
+                continue
+                
+            entry_url = entry.get("url") or entry.get("webpage_url")
+            if not entry_url and entry.get("id"):
+                entry_url = f"https://www.youtube.com/watch?v={entry['id']}"
+                
+            if not entry_url:
+                continue
+                
+            entry_opts = dict(ydl_opts)
+            entry_opts['outtmpl'] = str(task_temp_dir / "%(title)s.%(ext)s")
+            entry_opts['progress_hooks'] = [make_progress_hook(task_id, idx, total_count)]
+            
+            with yt_dlp.YoutubeDL(entry_opts) as ydl:
+                ydl.download([entry_url])
+                
+        # Pause between batches if there are more items to process
+        if batch_start + batch_size < total_count:
+            task_store.update_task(task_id, status="downloading", speed="Cooling down...", eta="Wait 10s")
+            time.sleep(10)
     
     task = task_store.get_task(task_id)
     if task and task.get("cancel_requested"):
