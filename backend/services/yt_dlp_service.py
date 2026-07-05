@@ -11,6 +11,16 @@ class DownloadCancelledException(Exception):
     """Exception raised when the download is cancelled by the user."""
     pass
 
+class SilentLogger:
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
+
 def make_progress_hook(task_id: str, current_index: int, total_count: int):
     """Create a progress hook for yt-dlp downloads."""
     def hook(d):
@@ -61,7 +71,8 @@ def analyze_url(url: str) -> Dict[str, Any]:
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=ios,android']}
+        'extractor_args': {'youtube': ['player_client=ios,android']},
+        'logger': SilentLogger()
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -158,7 +169,8 @@ def _get_audio_opts(quality: str) -> dict:
         'sleep_requests': 2.0,
         'sleep_interval': 3,
         'max_sleep_interval': 6,
-        'extractor_args': {'youtube': ['player_client=android,web']}
+        'extractor_args': {'youtube': ['player_client=ios,android']},
+        'logger': SilentLogger()
     }
 
 def _get_video_opts(quality: str) -> dict:
@@ -169,7 +181,8 @@ def _get_video_opts(quality: str) -> dict:
         'sleep_requests': 2.0,
         'sleep_interval': 3,
         'max_sleep_interval': 6,
-        'extractor_args': {'youtube': ['player_client=android,web']}
+        'extractor_args': {'youtube': ['player_client=ios,android']},
+        'logger': SilentLogger()
     }
     if quality == "1080p":
         ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
@@ -303,6 +316,7 @@ def run_download_task(task_id: str, url: str, type_: str, quality: str, selected
             'skip_download': True,
             'quiet': True,
             'no_warnings': True,
+            'logger': SilentLogger()
         }
         with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
             meta = ydl.extract_info(url, download=False)
