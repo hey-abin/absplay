@@ -24,7 +24,7 @@ app = FastAPI(
 import os
 
 # Configure CORS for production and local development
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 origins = [
     "http://localhost:5173",
     "https://localhost:5173",
