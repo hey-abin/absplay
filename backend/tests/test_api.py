@@ -48,7 +48,7 @@ def test_download_and_progress_flow():
             "quality": "720p"
         })
         assert response.status_code == 200
-        task_id = response.json()["task_id"]
+        task_id = response.json()["task_ids"][0]
         assert task_id is not None
         
         # Test progress endpoint

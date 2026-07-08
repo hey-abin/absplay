@@ -25,32 +25,64 @@ async def download(request: DownloadRequest, background_tasks: BackgroundTasks):
     # Trigger a clean up of older files (e.g., older than 1 hour) in background
     background_tasks.add_task(cleanup_old_files, 3600)
     
-    if request.type == "playlist" and request.selected_items and len(request.selected_items) > 10:
-        task_ids = []
-        tasks_to_run = []
-        
-        chunk_size = 10
-        for i in range(0, len(request.selected_items), chunk_size):
-            chunk = request.selected_items[i:i + chunk_size]
-            part_number = (i // chunk_size) + 1
-            task_id = task_store.create_task(
-                request.url,
-                request.type,
-                quality=request.quality,
-                selected_items=chunk,
-                part_number=part_number
-            )
-            task_ids.append(task_id)
-            tasks_to_run.append({
-                "task_id": task_id,
-                "url": request.url,
-                "type_": request.type,
-                "quality": request.quality,
-                "selected_items": chunk
-            })
+    if request.type == "playlist" and request.selected_items:
+        if len(request.selected_items) == 1:
+            # Just download the single track as a normal file
+            import yt_dlp
+            from backend.services.yt_dlp_service import SilentLogger
             
-        background_tasks.add_task(run_sequential_downloads, tasks_to_run)
-        return {"task_ids": task_ids}
+            ydl_opts_meta = {
+                'extract_flat': 'in_playlist',
+                'skip_download': True,
+                'quiet': True,
+                'no_warnings': True,
+                'logger': SilentLogger()
+            }
+            with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
+                meta = ydl.extract_info(request.url, download=False)
+                
+            entries = meta.get("entries", [])
+            idx = request.selected_items[0]
+            if idx < len(entries):
+                entry = entries[idx]
+                entry_url = entry.get("url") or entry.get("webpage_url")
+                if not entry_url and entry.get("id"):
+                    entry_url = f"https://www.youtube.com/watch?v={entry['id']}"
+                    
+                if entry_url:
+                    title = entry.get("title", f"Track {idx+1}")
+                    single_type = "video" if request.quality != "bestaudio" and not "kbps" in request.quality else "audio"
+                    task_id = task_store.create_task(
+                        entry_url,
+                        single_type,
+                        quality=request.quality,
+                        title=title
+                    )
+                    background_tasks.add_task(
+                        run_download_task,
+                        task_id=task_id,
+                        url=entry_url,
+                        type_=single_type,
+                        quality=request.quality
+                    )
+                    return {"task_ids": [task_id]}
+                    
+        # Otherwise, ZIP the playlist items
+        task_id = task_store.create_task(
+            request.url,
+            request.type,
+            quality=request.quality,
+            selected_items=request.selected_items
+        )
+        background_tasks.add_task(
+            run_download_task,
+            task_id=task_id,
+            url=request.url,
+            type_=request.type,
+            quality=request.quality,
+            selected_items=request.selected_items
+        )
+        return {"task_ids": [task_id]}
     else:
         # Register single task
         task_id = task_store.create_task(

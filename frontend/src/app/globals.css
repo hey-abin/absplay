@@ -4,7 +4,7 @@
   --background-light: #f8fafc;
   --foreground-light: #0f172a;
   
-  --background-dark: #030712;
+  --background-dark: #0B1120;
   --foreground-dark: #f9fafb;
 }
 
@@ -68,6 +68,25 @@
   background: linear-gradient(135deg, #f43f5e 0%, #f97316 100%);
 }
 
+.gradient-border-wrapper {
+  position: relative;
+  background: #0B1120;
+  border-radius: 0.75rem;
+}
+
+.gradient-border-wrapper::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(90deg, #8B5CF6 0%, #f43f5e 50%, #f97316 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
 /* Simple keyframe animations */
 @keyframes pulse-subtle {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -77,3 +96,4 @@
 .animate-pulse-subtle {
   animation: pulse-subtle 2s infinite ease-in-out;
 }
+
