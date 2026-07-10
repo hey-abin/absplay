@@ -7,6 +7,12 @@ from backend.services.task_service import task_store
 from backend.utils.file_utils import DOWNLOADS_DIR, TEMP_DIR, zip_directory
 from backend.services.url_detector import detect_url_type
 
+def _inject_cookies(opts: dict) -> dict:
+    cookie_path = Path("cookies.txt")
+    if cookie_path.exists():
+        opts['cookiefile'] = str(cookie_path.absolute())
+    return opts
+
 class DownloadCancelledException(Exception):
     """Exception raised when the download is cancelled by the user."""
     pass
@@ -66,14 +72,14 @@ def analyze_url(url: str) -> Dict[str, Any]:
     """Analyze the media URL and return its metadata."""
     url_info = detect_url_type(url)
     
-    ydl_opts = {
+    ydl_opts = _inject_cookies({
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
         'extractor_args': {'youtube': ['player_client=ios,android']},
         'logger': SilentLogger()
-    }
+    })
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
@@ -157,7 +163,7 @@ def analyze_url(url: str) -> Dict[str, Any]:
             }
 
 def _get_audio_opts(quality: str) -> dict:
-    return {
+    return _inject_cookies({
         'format': 'bestaudio/best',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -171,10 +177,10 @@ def _get_audio_opts(quality: str) -> dict:
         'max_sleep_interval': 6,
         'extractor_args': {'youtube': ['player_client=ios,android']},
         'logger': SilentLogger()
-    }
+    })
 
 def _get_video_opts(quality: str) -> dict:
-    ydl_opts = {
+    ydl_opts = _inject_cookies({
         'format': 'best',
         'quiet': True,
         'no_warnings': True,
@@ -183,7 +189,7 @@ def _get_video_opts(quality: str) -> dict:
         'max_sleep_interval': 6,
         'extractor_args': {'youtube': ['player_client=ios,android']},
         'logger': SilentLogger()
-    }
+    })
     if quality == "1080p":
         ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
     elif quality == "720p":
@@ -311,13 +317,13 @@ def run_download_task(task_id: str, url: str, type_: str, quality: str, selected
         url_info = detect_url_type(url)
         
         # 1. Fetch metadata first to get actual title and info
-        ydl_opts_meta = {
+        ydl_opts_meta = _inject_cookies({
             'extract_flat': 'in_playlist',
             'skip_download': True,
             'quiet': True,
             'no_warnings': True,
             'logger': SilentLogger()
-        }
+        })
         with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
             meta = ydl.extract_info(url, download=False)
             
