@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the backend source code
 COPY backend/ ./backend/
+# Copy cookies file if it exists in the root directory (the * prevents failure if missing)
+COPY cookies.txt* ./
 
 # Expose port (Railway will override this via $PORT)
 EXPOSE 8000
