@@ -8,9 +8,23 @@ from backend.utils.file_utils import DOWNLOADS_DIR, TEMP_DIR, zip_directory
 from backend.services.url_detector import detect_url_type
 
 def _inject_cookies(opts: dict) -> dict:
-    cookie_path = Path("cookies.txt")
-    if cookie_path.exists():
-        opts['cookiefile'] = str(cookie_path.absolute())
+    # Look for cookies.txt in multiple possible locations due to cloud host structures
+    possible_paths = [
+        Path("cookies.txt"), # Current working directory (often root or backend)
+        Path(__file__).parent.parent / "cookies.txt", # backend/cookies.txt
+        Path(__file__).parent.parent.parent / "cookies.txt", # root/cookies.txt
+    ]
+    
+    for cookie_path in possible_paths:
+        if cookie_path.exists():
+            print(f"Found cookies.txt at: {cookie_path.absolute()}")
+            opts['cookiefile'] = str(cookie_path.absolute())
+            # Removing player_client spoofing when using cookies, as it can conflict
+            if 'extractor_args' in opts:
+                del opts['extractor_args']
+            return opts
+            
+    print("WARNING: cookies.txt not found. YouTube downloads may fail with HTTP 403 Forbidden on cloud IPs.")
     return opts
 
 class DownloadCancelledException(Exception):
