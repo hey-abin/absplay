@@ -511,7 +511,7 @@ export default function Home() {
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 bg-[#0B1120] text-gray-100`}>
       
       {/* Toast Overlay */}
-      <div className="fixed top-20 right-4 z-[70] flex flex-col gap-3 w-[calc(100%-2rem)] sm:top-6 sm:right-6 sm:max-w-sm sm:w-full pointer-events-none">
+      <div className="fixed top-24 right-4 z-[70] flex flex-col gap-3 w-[calc(100%-2rem)] sm:top-24 sm:right-6 sm:max-w-sm sm:w-full pointer-events-none">
         {toasts.map(t => (
           <div
             key={t.id}
