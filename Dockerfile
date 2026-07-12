@@ -17,7 +17,7 @@ COPY backend/ ./backend/
 # Copy cookies file if it exists in the root directory (the * prevents failure if missing)
 COPY cookies.txt* ./
 
-# Expose port (Railway will override this via $PORT)
+# Expose port (the host platform will override this via $PORT)
 EXPOSE 8000
 
 # Set default port
