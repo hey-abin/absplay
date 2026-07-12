@@ -19,6 +19,9 @@ def _inject_cookies(opts: dict) -> dict:
         if cookie_path.exists():
             print(f"Found cookies.txt at: {cookie_path.absolute()}")
             opts['cookiefile'] = str(cookie_path.absolute())
+            # Removing player_client spoofing when using cookies, as it can conflict
+            if 'extractor_args' in opts:
+                del opts['extractor_args']
             return opts
             
     print("WARNING: cookies.txt not found. YouTube downloads may fail with HTTP 403 Forbidden on cloud IPs.")

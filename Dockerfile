@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 # Install FFmpeg (required for yt-dlp)
 RUN apt-get update && \
-    apt-get install -y ffmpeg && \
+    apt-get install -y ffmpeg nodejs && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
