@@ -38,8 +38,11 @@ async def download(request: DownloadRequest, background_tasks: BackgroundTasks):
                 'no_warnings': True,
                 'logger': SilentLogger()
             }
-            with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
-                meta = ydl.extract_info(request.url, download=False)
+            import asyncio
+            def _extract_meta():
+                with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
+                    return ydl.extract_info(request.url, download=False)
+            meta = await asyncio.to_thread(_extract_meta)
                 
             entries = meta.get("entries", [])
             idx = request.selected_items[0]
@@ -191,7 +194,7 @@ async def retry_task(task_id: str, background_tasks: BackgroundTasks):
         title="Initializing..."
     )
     
-    from backend.utils.url_parser import detect_url_type
+    from backend.services.url_detector import detect_url_type
     url_info = detect_url_type(task["url"])
     
     if url_info.get("isSpotify"):

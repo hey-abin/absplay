@@ -18,7 +18,8 @@ async def analyze(request: AnalyzeRequest):
         )
         
     try:
-        metadata = analyze_url(request.url)
+        import asyncio
+        metadata = await asyncio.to_thread(analyze_url, request.url)
         return metadata
     except ValueError as ve:
         raise HTTPException(

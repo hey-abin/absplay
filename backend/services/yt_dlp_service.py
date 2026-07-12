@@ -222,8 +222,23 @@ def _download_single(task_id: str, url: str, title: str, ydl_opts: dict):
     ydl_opts['outtmpl'] = str(DOWNLOADS_DIR / f"{task_id}.%(ext)s")
     ydl_opts['progress_hooks'] = [make_progress_hook(task_id, 0, 1)]
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            break # Success
+        except yt_dlp.utils.DownloadError as e:
+            if attempt < max_retries - 1 and ("403" in str(e) or "Sign in" in str(e)):
+                print(f"Retrying task {task_id} due to 403/Bot detection. Falling back to alternative client spoofing...")
+                # Fallback: remove cookies and enforce player client
+                if 'cookiefile' in ydl_opts:
+                    del ydl_opts['cookiefile']
+                ydl_opts['extractor_args'] = {'youtube': ['player_client=ios,android']}
+                import time
+                time.sleep(2)
+            else:
+                raise e
         
     downloaded_files = list(DOWNLOADS_DIR.glob(f"{task_id}.*"))
     if not downloaded_files:
@@ -275,8 +290,21 @@ def _download_playlist(task_id: str, title: str, meta: dict, ydl_opts: dict, sel
         entry_opts['outtmpl'] = str(task_temp_dir / "%(title)s.%(ext)s")
         entry_opts['progress_hooks'] = [make_progress_hook(task_id, idx, total_count)]
         
-        with yt_dlp.YoutubeDL(entry_opts) as ydl:
-            ydl.download([entry_url])
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                with yt_dlp.YoutubeDL(entry_opts) as ydl:
+                    ydl.download([entry_url])
+                break
+            except yt_dlp.utils.DownloadError as e:
+                if attempt < max_retries - 1 and ("403" in str(e) or "Sign in" in str(e)):
+                    print(f"Retrying playlist item {entry_url} due to 403/Bot detection. Falling back to alternative client spoofing...")
+                    if 'cookiefile' in entry_opts:
+                        del entry_opts['cookiefile']
+                    entry_opts['extractor_args'] = {'youtube': ['player_client=ios,android']}
+                    time.sleep(2)
+                else:
+                    raise e
             
         # Add a short delay between every single video to prevent HTTP 403 Forbidden
         if idx < total_count - 1:
@@ -386,14 +414,29 @@ def run_download_task(task_id: str, url: str, type_: str, quality: str, selected
             eta="00:00",
             error="Download cancelled by user"
         )
+    except yt_dlp.utils.DownloadError as e:
+        error_msg = str(e)
+        print(f"DownloadError for task {task_id}: {error_msg}")
+        cleanup_task_files(task_id)
+        
+        user_error = "Download failed due to a server network issue. Please try again later."
+        if "Sign in to confirm you're not a bot" in error_msg or "403" in error_msg:
+            user_error = "Download blocked by YouTube anti-bot protection. Retrying later may help."
+        elif "Video unavailable" in error_msg or "Private video" in error_msg:
+            user_error = "The requested video is unavailable or private."
+            
+        task_store.update_task(
+            task_id,
+            status="failed",
+            error=user_error
+        )
     except Exception as e:
-        print(f"Download Error for task {task_id}: {str(e)}")
-        # Clean up files for this task
+        print(f"General Error for task {task_id}: {str(e)}")
         cleanup_task_files(task_id)
         task_store.update_task(
             task_id,
             status="failed",
-            error="Download failed due to a server network issue. Please try again later."
+            error="An unexpected error occurred during download."
         )
 
 def cleanup_task_files(task_id: str):
