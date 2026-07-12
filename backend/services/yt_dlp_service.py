@@ -19,9 +19,6 @@ def _inject_cookies(opts: dict) -> dict:
         if cookie_path.exists():
             print(f"Found cookies.txt at: {cookie_path.absolute()}")
             opts['cookiefile'] = str(cookie_path.absolute())
-            # Removing player_client spoofing when using cookies, as it can conflict
-            if 'extractor_args' in opts:
-                del opts['extractor_args']
             return opts
             
     print("WARNING: cookies.txt not found. YouTube downloads may fail with HTTP 403 Forbidden on cloud IPs.")
@@ -98,7 +95,8 @@ def analyze_url(url: str) -> Dict[str, Any]:
         try:
             info = ydl.extract_info(url, download=False)
         except Exception as e:
-            raise ValueError(f"Failed to analyze URL: {str(e)}")
+            print(f"Analysis Error for URL {url}: {str(e)}")
+            raise ValueError("Failed to process the URL due to a server restriction or network issue.")
             
         if not info:
             raise ValueError("No metadata found for URL")
@@ -386,12 +384,13 @@ def run_download_task(task_id: str, url: str, type_: str, quality: str, selected
             error="Download cancelled by user"
         )
     except Exception as e:
+        print(f"Download Error for task {task_id}: {str(e)}")
         # Clean up files for this task
         cleanup_task_files(task_id)
         task_store.update_task(
             task_id,
             status="failed",
-            error=str(e)
+            error="Download failed due to a server network issue. Please try again later."
         )
 
 def cleanup_task_files(task_id: str):
